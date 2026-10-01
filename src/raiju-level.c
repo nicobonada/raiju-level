@@ -2,6 +2,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <stdio.h>
+#include <string.h>
 
 /* Wired USB-C and the HyperSpeed dongle. SDL's PS5 HID driver knows both. */
 #define RAIJU_VENDOR 0x1532
@@ -10,8 +11,6 @@
 
 #define MAX_JOYSTICKS 8
 #define WAIT_MS 2000
-/* One cell per PS5 HID step: percent is min(level * 10 + 5, 100). */
-#define BAR_CELLS 10
 
 static const char *power_state_name(SDL_PowerState state)
 {
@@ -38,25 +37,56 @@ static int is_raiju(Uint16 vendor, Uint16 product)
     return vendor == RAIJU_VENDOR && (product == RAIJU_WIRED || product == RAIJU_DONGLE);
 }
 
-/* 5% -> one block, 85% -> nine, 95% and 100% -> full. */
-static void print_charge_bar(int percent)
+/* Symbols Nerd Font, Material Design. Kitty maps U+F0001-U+F1AF0 there.
+   Index 0 is empty, then 10% steps, then full. SDL's steps are
+   min(level * 10 + 5, 100), so 85% lands on the 90% glyph. */
+static const char *const battery_icon[] = {
+    "\U000f008e", "\U000f007a", "\U000f007b", "\U000f007c", "\U000f007d",
+    "\U000f007e", "\U000f007f", "\U000f0080", "\U000f0081", "\U000f0082",
+    "\U000f0079",
+};
+
+static const char *const battery_charging_icon[] = {
+    "\U000f089f", "\U000f089c", "\U000f0086", "\U000f0087", "\U000f0088",
+    "\U000f089d", "\U000f0089", "\U000f089e", "\U000f008a", "\U000f008b",
+    "\U000f0085",
+};
+
+static const char *charge_icon(int percent, SDL_PowerState state)
 {
-    int filled;
+    int step;
+
+    if (percent <= 0) {
+        step = 0;
+    } else if (percent >= 100) {
+        step = 10;
+    } else {
+        step = (percent + 5) / 10;
+    }
+    if (state == SDL_POWERSTATE_CHARGING) {
+        return battery_charging_icon[step];
+    }
+    return battery_icon[step];
+}
+
+static int parse_args(int argc, char **argv, int *show_icon)
+{
     int i;
 
-    if (percent < 0) {
-        filled = 0;
-    } else if (percent >= 100) {
-        filled = BAR_CELLS;
-    } else {
-        filled = (percent + 5) / 10;
+    *show_icon = 0;
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--icon") == 0 || strcmp(argv[i], "-i") == 0) {
+            *show_icon = 1;
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            fputs("usage: raiju-level [--icon]\n", stdout);
+            return 0;
+        } else {
+            fprintf(stderr, "raiju-level: unknown option %s\n", argv[i]);
+            fputs("usage: raiju-level [--icon]\n", stderr);
+            return -1;
+        }
     }
-
-    fputs("[", stdout);
-    for (i = 0; i < BAR_CELLS; i++) {
-        fputs(i < filled ? "█" : " ", stdout);
-    }
-    fputs("] ", stdout);
+    return 1;
 }
 
 int main(int argc, char **argv)
@@ -67,9 +97,13 @@ int main(int argc, char **argv)
     int got_percent = 0;
     Uint64 deadline;
     int i;
+    int show_icon;
+    int args;
 
-    (void)argc;
-    (void)argv;
+    args = parse_args(argc, argv, &show_icon);
+    if (args <= 0) {
+        return args == 0 ? 0 : 1;
+    }
 
     /* The kernel node has no battery page. The percent comes from SDL's
        PS5 HID driver, which reads the charge nibble in the input report. */
@@ -154,7 +188,9 @@ int main(int argc, char **argv)
         printf("%s (%04x:%04x): ", name, vendor, product);
         if (percent >= 0) {
             got_percent = 1;
-            print_charge_bar(percent);
+            if (show_icon) {
+                printf("%s ", charge_icon(percent, state));
+            }
             printf("%d%% %s\n", percent, power_state_name(state));
         } else {
             printf("%s\n", power_state_name(state));
