@@ -15,8 +15,10 @@ nix run ~/src/raiju-level
 A Raiju on the HyperSpeed dongle looks like:
 
 ```text
-Razer Raiju V3 Pro(PS/Wireless) (1532:1026): 100% on-battery
+Razer Raiju V3 Pro(PS/Wireless) (1532:1026): [██████████] 100% on-battery
 ```
+
+The bar is ten cells, one per reported step. 85% is nine blocks.
 
 `on-battery`, `charging`, and `charged` are SDL's power states. If SDL
 never gets a percentage, the line omits it and the command exits 1.

@@ -10,6 +10,8 @@
 
 #define MAX_JOYSTICKS 8
 #define WAIT_MS 2000
+/* One cell per PS5 HID step: percent is min(level * 10 + 5, 100). */
+#define BAR_CELLS 10
 
 static const char *power_state_name(SDL_PowerState state)
 {
@@ -34,6 +36,27 @@ static const char *power_state_name(SDL_PowerState state)
 static int is_raiju(Uint16 vendor, Uint16 product)
 {
     return vendor == RAIJU_VENDOR && (product == RAIJU_WIRED || product == RAIJU_DONGLE);
+}
+
+/* 5% -> one block, 85% -> nine, 95% and 100% -> full. */
+static void print_charge_bar(int percent)
+{
+    int filled;
+    int i;
+
+    if (percent < 0) {
+        filled = 0;
+    } else if (percent >= 100) {
+        filled = BAR_CELLS;
+    } else {
+        filled = (percent + 5) / 10;
+    }
+
+    fputs("[", stdout);
+    for (i = 0; i < BAR_CELLS; i++) {
+        fputs(i < filled ? "█" : " ", stdout);
+    }
+    fputs("] ", stdout);
 }
 
 int main(int argc, char **argv)
@@ -128,12 +151,13 @@ int main(int argc, char **argv)
         if (!name) {
             name = "unknown";
         }
+        printf("%s (%04x:%04x): ", name, vendor, product);
         if (percent >= 0) {
             got_percent = 1;
-            printf("%s (%04x:%04x): %d%% %s\n", name, vendor, product, percent,
-                   power_state_name(state));
+            print_charge_bar(percent);
+            printf("%d%% %s\n", percent, power_state_name(state));
         } else {
-            printf("%s (%04x:%04x): %s\n", name, vendor, product, power_state_name(state));
+            printf("%s\n", power_state_name(state));
         }
         SDL_CloseJoystick(open[i]);
     }
